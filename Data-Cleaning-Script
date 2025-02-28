@@ -1,0 +1,113 @@
+# World Life Expectancy (Data Celaning)
+
+SELECT * FROM worldlifeexpectancy;
+
+# In the first step of date cleaning, I am going to identify the duplicated items and get rid of them.
+
+# In the following query, I am going to find duplicate if there is any in the table. since there is no any unique item to recogize them, I use CONCAT(country, year) to create one unique item.
+
+SELECT country, year, CONCAT (country, year), COUNT(CONCAT (country, year))
+FROM worldlifeexpectancy
+GROUP BY country, year, CONCAT (country, year)
+HAVING COUNT(CONCAT (country, year)) > 1
+;
+
+# In the next query, I am going to fnd the corrospnding row_id to each of the duplicate items by using Window function ROW_NUMBER(). Then, a sub query creates to do filter on the row_num column had made by ROW_NUMBER().
+
+SELECT *
+FROM (
+	SELECT ROW_ID, 
+	CONCAT(country, year),
+	ROW_NUMBER() OVER (PARTITION BY CONCAT(country, year) ORDER BY CONCAT(country, year)) as row_num
+	FROM worldlifeexpectancy) AS ROW_table
+WHERE row_num > 1;
+
+# In the next query, I am going to delete the identified row_id. just by putting the previous query in a DELETE statement.
+
+DELETE FROM worldlifeexpectancy
+WHERE ROW_ID IN (SELECT ROW_ID
+FROM (
+	SELECT ROW_ID, 
+	CONCAT(country, year),
+	ROW_NUMBER() OVER (PARTITION BY CONCAT(country, year) ORDER BY CONCAT(country, year)) as row_num
+	FROM worldlifeexpectancy) AS ROW_table
+WHERE row_num > 1);
+
+# In the second step of data cleaning, I am going to take care of missing, Null data in the table. since it is apparent that some data in status and life expectancy column are missing.
+
+SELECT status, `life expectancy`
+FROM worldlifeexpectancy
+;
+
+# first, working on status column.
+
+SELECT * 
+FROM worldlifeexpectancy
+WHERE status = ''
+;
+
+SELECT DISTINCT (status)
+FROM worldlifeexpectancy
+WHERE status != ''
+;
+
+# from the last query, it is apparent that there are two status (developing and developed), so I will extract the status from the other rows corrosponding to the country and then populate it to the blank rows. in the follwing query, i will use self join on the table to extract the data from the table and assign it to its own.
+
+UPDATE worldlifeexpectancy t1
+JOIN worldlifeexpectancy t2
+USING (country)
+SET t1.status = 'Developing'
+WHERE t1.status = ''
+AND t2.status != ''
+AND t2.status = 'Developing';
+
+UPDATE worldlifeexpectancy t1
+JOIN worldlifeexpectancy t2
+USING (country)
+SET t1.status = 'Developed'
+WHERE t1.status = ''
+AND t2.status != ''
+AND t2.status = 'Developed';
+
+# Now, working on life expectancy column.
+
+SELECT *
+FROM worldlifeexpectancy
+WHERE `life expectancy` = ''
+;
+
+SELECT country, year, `life expectancy`
+FROM worldlifeexpectancy;
+
+# from the last query, I found that I can use the average value of the year before and after the blank value for each country. so I am going to use self join for this one as well.
+
+SELECT t1.country, t1.year, t1.`life expectancy`, 
+t2.country, t2.year, t2.`life expectancy`, 
+t3.country, t3.year, t3.`life expectancy`,
+ROUND((t2.`life expectancy` + t3.`life expectancy`)/2,1) AS AVG
+FROM worldlifeexpectancy t1
+JOIN worldlifeexpectancy t2
+	ON t1.country = t2. country
+	AND t1.year = t2. year -1
+JOIN worldlifeexpectancy t3
+	ON t1.country = t3.country
+	AND t1.year = t3.year + 1
+WHERE t1.`life expectancy` = ''
+;
+
+# Now, populating the calculated values to the missing values.
+
+UPDATE worldlifeexpectancy t1
+JOIN worldlifeexpectancy t2
+	ON t1.country = t2. country
+	AND t1.year = t2. year -1
+JOIN worldlifeexpectancy t3
+	ON t1.country = t3.country
+	AND t1.year = t3.year + 1
+SET t1.`life expectancy` = ROUND((t2.`life expectancy` + t3.`life expectancy`)/2,1)
+WHERE t1.`life expectancy` = ''
+;
+
+SELECT *
+FROM worldlifeexpectancy
+;
